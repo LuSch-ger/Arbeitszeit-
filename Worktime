@@ -1,0 +1,217 @@
+// Datei: ArbeitszeitApp.js
+import React, { useState } from "react";
+import { format, subDays } from "date-fns";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+} from "recharts";
+
+export default function ArbeitszeitApp() {
+  const [step, setStep] = useState("start");
+  const [selectedOption, setSelectedOption] = useState("");
+  const [selectedDate, setSelectedDate] = useState("");
+  const [startTime, setStartTime] = useState("08:00");
+  const [endTime, setEndTime] = useState("09:00");
+  const [workStartTime, setWorkStartTime] = useState("09:15");
+  const [workEndTime, setWorkEndTime] = useState("17:00");
+  const [additionalWork, setAdditionalWork] = useState(null);
+  const [result, setResult] = useState(null);
+  const [weeklyLog, setWeeklyLog] = useState([]);
+
+  const totalWeekHours = weeklyLog.reduce((sum, e) => sum + e.hours, 0).toFixed(2);
+
+  const days = [0, 1, 2, 3].map((d) => {
+    const date = subDays(new Date(), d);
+    return {
+      label: d === 0 ? "Heute" : format(date, "dd.MM.yyyy"),
+      value: format(date, "yyyy-MM-dd"),
+    };
+  });
+
+  const handleOptionClick = (option) => {
+    setSelectedOption(option);
+    setStep("date");
+  };
+
+  const handleDateClick = (date) => {
+    setSelectedDate(date);
+    setStep("time");
+  };
+
+  const handleBack = () => {
+    if (step === "date") setStep("start");
+    else if (step === "time") setStep("date");
+    else if (step === "worked") setStep("time");
+    else if (step === "worktime") setStep("worked");
+    else if (step === "result") setStep("start");
+  };
+
+  const handleTimeSubmit = () => {
+    if (selectedOption === "arbeitszeit") {
+      calculateResult(startTime, endTime);
+      setStep("result");
+    } else {
+      setStep("worked");
+    }
+  };
+
+  const calculateResult = (from, to, additionalLabel = "") => {
+    const [sh, sm] = from.split(":").map(Number);
+    const [eh, em] = to.split(":").map(Number);
+    let totalMinutes = (eh * 60 + em) - (sh * 60 + sm);
+
+    if (totalMinutes <= 0) {
+      setResult({ status: "error", message: "❌ 🔴 Ungültige Zeitspanne." });
+    } else {
+      if (totalMinutes > 360) totalMinutes -= 45;
+      const hours = totalMinutes / 60;
+      const entry = {
+        date: format(new Date(selectedDate), "dd.MM.yyyy"),
+        label: additionalLabel || selectedOption,
+        hours: +hours.toFixed(2),
+      };
+      setWeeklyLog([...weeklyLog, entry]);
+
+      if (hours > 10) {
+        setResult({
+          status: "too-much",
+          message: `❌ 🔴 Gesamtarbeitszeit: ${hours.toFixed(2)}h – Überschreitung!`,
+        });
+      } else {
+        const remaining = 10 - hours;
+        setResult({
+          status: "ok",
+          message: `✅ 🟢 Gesamtarbeitszeit: ${hours.toFixed(2)}h. Verbleibend: ${remaining.toFixed(2)}h.`,
+        });
+      }
+    }
+  };
+
+  const handleWorkDecision = (worked) => {
+    setAdditionalWork(worked);
+    if (worked) setStep("worktime");
+    else {
+      calculateResult(startTime, endTime);
+      setStep("result");
+    }
+  };
+
+  const handleFinalSubmit = () => {
+    const [sh, sm] = startTime.split(":").map(Number);
+    const [eh, em] = endTime.split(":").map(Number);
+    const [wh, wm] = workStartTime.split(":").map(Number);
+    const [we, wn] = workEndTime.split(":").map(Number);
+    let travelMinutes = (eh * 60 + em) - (sh * 60 + sm);
+    let workMinutes = (we * 60 + wn) - (wh * 60 + wm);
+    let totalMinutes = travelMinutes + workMinutes;
+
+    if (totalMinutes > 360) totalMinutes -= 45;
+    const hours = totalMinutes / 60;
+    const entry = {
+      date: format(new Date(selectedDate), "dd.MM.yyyy"),
+      label: `${selectedOption} + Arbeit`,
+      hours: +hours.toFixed(2),
+    };
+    setWeeklyLog([...weeklyLog, entry]);
+
+    if (hours > 10) {
+      setResult({
+        status: "too-much",
+        message: `❌ 🔴 Gesamtarbeitszeit: ${hours.toFixed(2)}h – Überschreitung!`,
+      });
+    } else {
+      const remaining = 10 - hours;
+      setResult({
+        status: "ok",
+        message: `✅ 🟢 Gesamtarbeitszeit: ${hours.toFixed(2)}h. Verbleibend: ${remaining.toFixed(2)}h.`,
+      });
+    }
+    setStep("result");
+  };
+
+  return (
+    <div style={{ padding: 20, maxWidth: 800, margin: "0 auto" }}>
+      {step === "start" && (
+        <>
+          <h2>Was möchtest du erfassen?</h2>
+          <button onClick={() => handleOptionClick("aktiv")}>Aktives Reisen</button>
+          <button onClick={() => handleOptionClick("passiv")}>Passives Reisen</button>
+          <button onClick={() => handleOptionClick("arbeitszeit")}>Arbeitszeit</button>
+          {weeklyLog.length > 0 && (
+            <>
+              <h3>Wochenüberblick (Gesamt: {totalWeekHours}h)</h3>
+              <ul>
+                {weeklyLog.map((e, i) => (
+                  <li key={i}>{e.date}: {e.label} – {e.hours}h</li>
+                ))}
+              </ul>
+              <div style={{ height: 300, backgroundColor: "#fff" }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={weeklyLog}>
+                    <XAxis dataKey="date" />
+                    <YAxis />
+                    <Tooltip />
+                    <ReferenceLine y={10} stroke="red" strokeDasharray="4 2" label="10h Maximum" />
+                    <Bar dataKey="hours" fill="#ff6600" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {step === "date" && (
+        <>
+          <h3>Wähle einen Tag</h3>
+          {days.map((d) => (
+            <button key={d.value} onClick={() => handleDateClick(d.value)}>{d.label}</button>
+          ))}
+          <button onClick={handleBack}>Zurück</button>
+        </>
+      )}
+
+      {step === "time" && (
+        <>
+          <h3>{selectedOption === "arbeitszeit" ? "Arbeitszeit" : "Reisezeit"} am {format(new Date(selectedDate), "dd.MM.yyyy")}:</h3>
+          <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} /> bis
+          <input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+          <button onClick={handleTimeSubmit}>Weiter</button>
+          <button onClick={handleBack}>Zurück</button>
+        </>
+      )}
+
+      {step === "worked" && (
+        <>
+          <h3>Wurde danach noch gearbeitet?</h3>
+          <button onClick={() => handleWorkDecision(true)}>Ja</button>
+          <button onClick={() => handleWorkDecision(false)}>Nein</button>
+          <button onClick={handleBack}>Zurück</button>
+        </>
+      )}
+
+      {step === "worktime" && (
+        <>
+          <h3>Arbeitszeit nach der Reise:</h3>
+          <input type="time" value={workStartTime} onChange={(e) => setWorkStartTime(e.target.value)} /> bis
+          <input type="time" value={workEndTime} onChange={(e) => setWorkEndTime(e.target.value)} />
+          <button onClick={handleFinalSubmit}>Auswerten</button>
+          <button onClick={handleBack}>Zurück</button>
+        </>
+      )}
+
+      {step === "result" && result && (
+        <>
+          <h3>Ergebnis:</h3>
+          <p>{result.message}</p>
+          <button onClick={handleBack}>Zurück</button>
+        </>
+      )}
+    </div>
+  );
+}
